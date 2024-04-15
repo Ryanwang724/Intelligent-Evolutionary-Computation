@@ -20,7 +20,7 @@ POP_SIZE = 100   # even number for crossover
 GENE_SIZE = 10
 CROSS_RATE = 0.6 # 0.8 to 0.6
 MUTATION_RATE = 0.2
-MAX_GEN = 100
+MAX_GEN = 500
 UPPER_BOUNDARY = 3
 LOWER_BOUNDARY = -3
 EXTREMUM = 'min'
@@ -39,10 +39,10 @@ if __name__ == '__main__':
     # ga_rosenbrock.execute()
 
     POP_SIZE = 100   # even number for crossover
-    GENE_SIZE = 14
+    GENE_SIZE = 16
     CROSS_RATE = 0.8
     MUTATION_RATE = 0.4
-    MAX_GEN = 200
+    MAX_GEN = 300
     UPPER_BOUNDARY = 1000
     LOWER_BOUNDARY = -1000
     EXTREMUM = 'min'
@@ -56,5 +56,5 @@ if __name__ == '__main__':
                         upper = UPPER_BOUNDARY,
                         lower = LOWER_BOUNDARY,
                         extremum = 'min',
-                        show_mode = False)
+                        show_mode = True)
     ga_eggholder.execute()

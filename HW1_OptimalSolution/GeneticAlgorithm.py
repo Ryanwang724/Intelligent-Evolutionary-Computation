@@ -62,6 +62,8 @@ class GeneticAlgorithm:
             result = self.decode(pop)
             value = self.func(result[0], result[1])
             self.fitness_value.append(value)
+        bias = abs(min(self.fitness_value))  # 調成非負
+        self.fitness_value = [x+bias for x in self.fitness_value] 
 
 
     def selection_by_RWS(self):
@@ -114,25 +116,25 @@ class GeneticAlgorithm:
                 
         self.mating_pool = shuffle_mating_pool
 
-    def mutation(self):  # 每個gene只有一個位置有機會突變
-        for p in self.mating_pool:
-            mr = random.uniform(0,1)
-            if mr < self.mutation_rate:
-                mutation_location = int(np.random.uniform(0, self.gene_size)) # 決定突變位置(uniform)
-                if p[mutation_location] == 0:
-                    p[mutation_location] = 1
-                else:
-                    p[mutation_location] = 0
-
-    # def mutation(self):  # 每個gene內的index都有機會突變
+    # def mutation(self):  # 每個gene只有一個位置有機會突變
     #     for p in self.mating_pool:
-    #         for i in range(self.gene_size):
-    #             mr = random.uniform(0,1)
-    #             if mr < self.mutation_rate:
-    #                 if p[i] == 0:
-    #                     p[i] = 1
-    #                 else:
-    #                     p[i] = 0
+    #         mr = random.uniform(0,1)
+    #         if mr < self.mutation_rate:
+    #             mutation_location = int(np.random.uniform(0, self.gene_size)) # 決定突變位置(uniform)
+    #             if p[mutation_location] == 0:
+    #                 p[mutation_location] = 1
+    #             else:
+    #                 p[mutation_location] = 0
+
+    def mutation(self):  # 每個gene內的index都有機會突變
+        for p in self.mating_pool:
+            for i in range(self.gene_size):
+                mr = random.uniform(0,1)
+                if mr < self.mutation_rate:
+                    if p[i] == 0:
+                        p[i] = 1
+                    else:
+                        p[i] = 0
 
     def clean(self):
         self.mating_pool = []
