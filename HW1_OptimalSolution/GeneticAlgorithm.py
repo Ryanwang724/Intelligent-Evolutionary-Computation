@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import ticker
+from matplotlib import cm
 from matplotlib.colors import LogNorm
 
 class GeneticAlgorithm:
@@ -62,37 +62,28 @@ class GeneticAlgorithm:
             result = self.decode(pop)
             value = self.func(result[0], result[1])
             self.fitness_value.append(value)
-        bias = abs(min(self.fitness_value))  # 調成非負
-        self.fitness_value = [x+bias for x in self.fitness_value] 
-
 
     def selection_by_RWS(self):
+        def softmax_max(x):
+            x = [xi-max(x) for xi in x] # 全部減去最大值
+            e_x = [np.exp(-xi) for xi in x]
+            return [x/sum(e_x) for x in e_x]
+        def softmax_min(x):
+            x = [xi-max(x) for xi in x] # 全部減去最大值
+            e_x = [np.exp(xi) for xi in x]
+            return [x/sum(e_x) for x in e_x]
+
         if self.extremum == 'min' and sum(self.fitness_value) == 0:
             self.mating_pool = self.pop
         elif self.extremum == 'min':
-            total_fitness_value = sum(1/x for x in self.fitness_value)
-            probability = [(1 / x) / total_fitness_value for x in self.fitness_value] # 最小化問題=>數字越小機率越大
-            for _ in range(self.pop_size):
-                random_pop = random.choices(self.pop, weights=probability)[0]
-                random_pop = list(random_pop)
-                self.mating_pool.append(random_pop)
+            probability = softmax_min(self.fitness_value)
+        elif self.extremum == 'max':
+            probability = softmax_max(self.fitness_value)
 
-    # def crossover(self):
-    #     def swap_func(a,b):
-    #         temp = a
-    #         a = b
-    #         b = temp
-    #         return a,b
-        
-    #     shuffle_mating_pool = np.random.permutation(self.mating_pool) # 打亂mating_pool順序
-    #     shuffle_mating_pool = [list(x) for x in shuffle_mating_pool]  # 轉為list
-
-    #     for i in range(0, len(shuffle_mating_pool), 2):
-    #         cr = random.uniform(0,1)
-    #         if cr < self.cross_rate:
-    #             cross_location = int(np.random.uniform(1, (self.gene_size+1)//2)) # 決定要從哪邊開始交換(uniform)
-    #             shuffle_mating_pool[i][:cross_location], shuffle_mating_pool[i+1][:cross_location] = swap_func(shuffle_mating_pool[i][:cross_location], shuffle_mating_pool[i+1][:cross_location])
-    #     self.mating_pool = shuffle_mating_pool
+        for _ in range(self.pop_size):
+            random_pop = random.choices(self.pop, weights=probability)[0]
+            random_pop = list(random_pop)
+            self.mating_pool.append(random_pop)
 
     def crossover(self):
         def swap_func(a,b):
@@ -115,16 +106,6 @@ class GeneticAlgorithm:
                     shuffle_mating_pool[i][cross_location-1+self.gene_size//2:], shuffle_mating_pool[i+1][cross_location-1+self.gene_size//2:] = swap_func(shuffle_mating_pool[i][cross_location-1+self.gene_size//2:], shuffle_mating_pool[i+1][cross_location-1+self.gene_size//2:])
                 
         self.mating_pool = shuffle_mating_pool
-
-    # def mutation(self):  # 每個gene只有一個位置有機會突變
-    #     for p in self.mating_pool:
-    #         mr = random.uniform(0,1)
-    #         if mr < self.mutation_rate:
-    #             mutation_location = int(np.random.uniform(0, self.gene_size)) # 決定突變位置(uniform)
-    #             if p[mutation_location] == 0:
-    #                 p[mutation_location] = 1
-    #             else:
-    #                 p[mutation_location] = 0
 
     def mutation(self):  # 每個gene內的index都有機會突變
         for p in self.mating_pool:
@@ -149,47 +130,37 @@ class GeneticAlgorithm:
         plt.legend()
 
     def plot_best_result(self):
+        x1 = np.linspace(self.lower, self.upper, 100)
+        x2 = np.linspace(self.lower, self.upper, 100)
+        X1, X2 = np.meshgrid(x1,x2)
+        all_value = self.func(X1,X2)
+        
         if self.func.__name__ == 'rosenbrock':  # 不同function有不同的畫圖方式
-            x1 = np.linspace(self.lower, self.upper, 100)
-            x2 = np.linspace(self.lower, self.upper, 100)
-            X1, X2 = np.meshgrid(x1,x2)
-            all_value = self.func(X1,X2)
-
             plt.subplot(1, 2, 2)
             plt.contourf(X1, X2, all_value, norm=LogNorm(), levels=50, alpha=0.9)
-            if self.extremum == 'min':
-                best_value = min(self.best_result)
-            elif self.extremum == 'max':
-                best_value = max(self.best_result)
-            index = self.best_result.index(best_value)
-            para = self.best_parameter[index]
-            plt.plot(para[0], para[1], 'r*')
-            plt.xlabel('$x_1$')
-            plt.ylabel('$x_2$')
-            plt.colorbar()
-            plt.title(f'GA {self.func.__name__} function')
-            plt.show()
         elif self.func.__name__ == 'eggholder':
-            x1 = np.linspace(self.lower, self.upper, 100)
-            x2 = np.linspace(self.lower, self.upper, 100)
-            X1, X2 = np.meshgrid(x1,x2)
-            all_value = self.func(X1,X2)
-
             plt.subplot(1, 2, 2)
             plt.contourf(X1, X2, all_value, levels=500)
-            if self.extremum == 'min':
-                best_value = min(self.best_result)
-            elif self.extremum == 'max':
-                best_value = max(self.best_result)
-            index = self.best_result.index(best_value)
-            para = self.best_parameter[index]
-            plt.plot(para[0], para[1], 'r*')
-            plt.xlabel('x')
-            plt.ylabel('y')
-            plt.colorbar()
-            plt.title(f'GA {self.func.__name__} function')
-            plt.show()
+        elif self.func.__name__ == 'himmelblau':
+            plt.subplot(1, 2, 2,projection='3d')
+            plt.contourf(X1, X2, all_value, levels=500,cmap=cm.jet)
+        elif self.func.__name__ == 'rastrigin':
+            plt.subplot(1, 2, 2,projection='3d')
+            plt.contourf(X1, X2, all_value, levels=500,cmap=cm.jet)
 
+        if self.extremum == 'min':
+            best_value = min(self.best_result)
+        elif self.extremum == 'max':
+            best_value = max(self.best_result)
+        index = self.best_result.index(best_value)
+        para = self.best_parameter[index]
+        plt.plot(para[0], para[1], 'r*')
+        print(f'best para: {para[0]:.4f}, {para[1]:.4f}')
+        plt.xlabel('$x_1$')
+        plt.ylabel('$x_2$')
+        plt.colorbar()
+        plt.title(f'GA {self.func.__name__} function')
+        plt.show()
 
     def execute(self):
         self.initialization()
