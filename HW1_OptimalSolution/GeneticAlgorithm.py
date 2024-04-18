@@ -6,25 +6,33 @@ from matplotlib.colors import LogNorm
 
 class GeneticAlgorithm:
     def __init__(self, pop_size, gene_size, cross_rate, mutation_rate, max_gen, func, upper, lower, extremum, show_mode):
-        self.pop_size = pop_size
-        self.gene_size = gene_size
-        self.cross_rate = cross_rate
-        self.mutation_rate = mutation_rate
-        self.max_gen = max_gen
-        self.pop = []
-        self.fitness_value = []
-        self.mating_pool = []
+        self.pop_size = pop_size               # 總染色體數
+        self.gene_size = gene_size             # 染色體
+        self.cross_rate = cross_rate           # 交配率
+        self.mutation_rate = mutation_rate     # 突變率
+        self.max_gen = max_gen                 # 最大迭代次數
+        self.pop = []                          # 染色體群體
+        self.fitness_value = []                # 個體分數
+        self.mating_pool = []                  # 交配池
 
-        self.func = func
-        self.upper = upper
-        self.lower = lower
-        self.extremum = extremum
-        self.best_result = []    # 每一代的最佳值
-        self.best_parameter = [] # 每一代最佳值的參數
+        self.func = func                       # 欲執行的函式名稱
+        self.upper = upper                     # 搜索範圍上限
+        self.lower = lower                     # 搜索範圍下限
+        self.extremum = extremum               # 找最大或最小值
+        self.best_result = []                  # 每一代的最佳fitness_value
+        self.best_parameter = []               # 每一代最佳fitness_value的參數
 
-        self.show_mode = show_mode
+        self.show_mode = show_mode             # 執行時是否在終端顯示執行log
 
-    def decode(self, pop):
+    def decode(self, pop:list):
+        """將染色體內的二進制資料轉為搜索範圍內的值
+
+        Args:
+            pop (list): 一次一個pop進來，格式為[1,0,0,1,1]
+
+        Returns:
+            list: [x1,y1]
+        """
         decimal_1 = ''
         decimal_2 = ''
         # 因有兩個參數，故將基因分成前後兩段
@@ -44,14 +52,21 @@ class GeneticAlgorithm:
 
         return [result_1, result_2]
 
-    def initialization(self):    # 產生初始population
+    def initialization(self):
+        """產生初始population
+        """
         for i in range(self.pop_size):
             temp_pop = []
             for j in range(self.gene_size):
                 temp_pop.append(random.choice([0, 1]))
             self.pop.append(temp_pop)
 
-    def evaluation(self, group:str):        # 計算每個pop帶入function內的值
+    def evaluation(self, group:str):
+        """計算每個pop帶入function內的值
+
+        Args:
+            group (str): 輸入要計算哪個群體:'pop' or 'mating_pool'
+        """
         if group == 'pop':
             population = self.pop
         elif group == 'mating_pool':
@@ -64,12 +79,14 @@ class GeneticAlgorithm:
             self.fitness_value.append(value)
 
     def selection_by_RWS(self):
+        """利用softmax計算出個別的機率後，用輪盤法抽選至交配池內
+        """
         def softmax_max(x):
-            x = [xi-max(x) for xi in x] # 全部減去最大值
+            x = [xi-max(x) for xi in x]
             e_x = [np.exp(-xi) for xi in x]
             return [x/sum(e_x) for x in e_x]
         def softmax_min(x):
-            x = [xi-max(x) for xi in x] # 全部減去最大值
+            x = [xi-max(x) for xi in x]
             e_x = [np.exp(xi) for xi in x]
             return [x/sum(e_x) for x in e_x]
 
@@ -86,6 +103,8 @@ class GeneticAlgorithm:
             self.mating_pool.append(random_pop)
 
     def crossover(self):
+        """交配池內的染色體進行交配
+        """
         def swap_func(a,b):
             temp = a
             a = b
@@ -107,7 +126,9 @@ class GeneticAlgorithm:
                 
         self.mating_pool = shuffle_mating_pool
 
-    def mutation(self):  # 每個gene內的index都有機會突變
+    def mutation(self):
+        """交配池內的染色體進行突變
+        """
         for p in self.mating_pool:
             for i in range(self.gene_size):
                 mr = random.uniform(0,1)
@@ -118,9 +139,13 @@ class GeneticAlgorithm:
                         p[i] = 0
 
     def clean(self):
+        """清空交配池
+        """
         self.mating_pool = []
 
     def plot_iteration_result(self):
+        """畫出每次迭代的最佳結果
+        """
         X = [x for x in range(1, self.max_gen+1)]
         Y = self.best_result
         plt.subplot(1, 2, 1)
@@ -130,6 +155,8 @@ class GeneticAlgorithm:
         plt.legend()
 
     def plot_best_result(self):
+        """畫出方程式圖形與找到的最佳解位置(紅色星號)
+        """
         x1 = np.linspace(self.lower, self.upper, 100)
         x2 = np.linspace(self.lower, self.upper, 100)
         X1, X2 = np.meshgrid(x1,x2)
