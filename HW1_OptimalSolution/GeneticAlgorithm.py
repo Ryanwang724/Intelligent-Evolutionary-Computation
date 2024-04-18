@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import LogNorm
+import os
 
 class GeneticAlgorithm:
     def __init__(self, pop_size, gene_size, cross_rate, mutation_rate, max_gen, func, upper, lower, extremum, show_mode):
@@ -187,8 +188,11 @@ class GeneticAlgorithm:
         plt.ylabel('$x_2$')
         plt.colorbar()
         plt.title(f'GA {self.func.__name__} function')
-        plt.show()
 
+        if not os.path.isdir(f'./img/{self.func.__name__}'):  # 存檔
+            os.makedirs(f'./img/{self.func.__name__}')
+        plt.savefig(f'./img/{self.func.__name__}/p{self.pop_size}g{self.gene_size/2}c{self.cross_rate}m{self.mutation_rate}max{self.max_gen}.jpg')
+        plt.show()
     def execute(self):
         self.initialization()
         self.evaluation('pop')
