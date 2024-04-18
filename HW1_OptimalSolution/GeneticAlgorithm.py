@@ -191,7 +191,7 @@ class GeneticAlgorithm:
 
         if not os.path.isdir(f'./img/{self.func.__name__}'):  # 存檔
             os.makedirs(f'./img/{self.func.__name__}')
-        plt.savefig(f'./img/{self.func.__name__}/p{self.pop_size}g{self.gene_size/2}c{self.cross_rate}m{self.mutation_rate}max{self.max_gen}.jpg')
+        plt.savefig(f'./img/{self.func.__name__}/p{self.pop_size}g{int(self.gene_size/2)}c{self.cross_rate}m{self.mutation_rate}max{self.max_gen}.jpg')
         plt.show()
     def execute(self):
         self.initialization()
