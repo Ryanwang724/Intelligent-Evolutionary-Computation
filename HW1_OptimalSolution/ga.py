@@ -15,11 +15,11 @@ def rastrigin(x1, x2):
     return 10*2 + (x1**2 - 10*np.cos(2*np.pi*x1)) + (x2**2 - 10*np.cos(2*np.pi*x2))
 
 if __name__ == '__main__':
-    run_select = 1      # 1:rosenbrock 2:eggholder 3:himmelblau 4:rastrigin
+    run_select = 4      # 1:rosenbrock 2:eggholder 3:himmelblau 4:rastrigin
     if run_select == 1:
         POP_SIZE = 100   # even number for crossover
         GENE_SIZE = 10
-        CROSS_RATE = 0.8 # 0.8 to 0.6
+        CROSS_RATE = 0.8
         MUTATION_RATE = 0.2
         MAX_GEN = 100
         UPPER_BOUNDARY = 3
@@ -42,7 +42,7 @@ if __name__ == '__main__':
         GENE_SIZE = 16
         CROSS_RATE = 0.8
         MUTATION_RATE = 0.2
-        MAX_GEN = 300
+        MAX_GEN = 500
         UPPER_BOUNDARY = 1000
         LOWER_BOUNDARY = -1000
         EXTREMUM = 'min'
@@ -62,8 +62,8 @@ if __name__ == '__main__':
         POP_SIZE = 200   # even number for crossover
         GENE_SIZE = 16
         CROSS_RATE = 0.8
-        MUTATION_RATE = 0.2
-        MAX_GEN = 300
+        MUTATION_RATE = 0.4
+        MAX_GEN = 500
         UPPER_BOUNDARY = 5
         LOWER_BOUNDARY = -5
         EXTREMUM = 'min'
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     elif run_select == 4:
         POP_SIZE = 200   # even number for crossover
         GENE_SIZE = 16
-        CROSS_RATE = 0.8
+        CROSS_RATE = 0.6
         MUTATION_RATE = 0.2
         MAX_GEN = 300
         UPPER_BOUNDARY = 5
