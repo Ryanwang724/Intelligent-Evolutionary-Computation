@@ -3,41 +3,54 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import csv
-import math
 from tqdm import tqdm
+from copy import deepcopy
 
-class TrainingDataPreProcessing:
-    def __init__(self):
-        self.this_file_path = os.path.dirname(os.path.abspath(__file__))
-        self.input_path = os.path.join(self.this_file_path, 'HW3_training_data')
-        self.output_file = os.path.join(self.this_file_path, 'train_data.csv')
+INPUT_DIMENSION = 3
+NODE_CNT = 7
 
-    def _write_csv(self, data:list):
-        with open(self.output_file, 'w', encoding='utf-8', newline='') as csvWriter:
-            writer = csv.writer(csvWriter)
-            for row in data:
-                writer.writerow(row)
-    
-    def execute(self):
-        file_list = [_ for _ in os.listdir(self.input_path) if _.endswith(r'.txt') and _[:6] == "train_"] # 取出符合條件的檔案
-        result_list = list()
-        for file in file_list:
-            file_path = os.path.join(self.input_path, file)
-            with open(file_path, 'r') as f:
-                for line in f.readlines():
-                    if '30.0000000' not in line:
-                        line = line.replace('\n','')
-                        line = line.split(' ')
-                        result_list.append(line)
+CAR_RADIUS = 3
+CAR_LENGTH = 2    # 5.8
 
-        self._write_csv(result_list)
-        print('[TrainingDataPreProcessing] done.')
+POP_SIZE = 100
+CROSS_RATE = 0.6
+MUTATION_RATE = 0.2
+MAX_GEN = 100
+
+TRAIN = True
+TEST = True
+
+# lambda function
+dist = lambda x: np.sum(x ** 2, axis = -1)                            # Mahalanobis distance
+theta_scale = lambda theta: (theta + 40) / 80.0                       # [-40, 40] -> [0, 1] for read training data
+output_scale = lambda output: ((output * 80.0) - 40)                  # [0, 1] -> [-40, 40] 
+
+
+def RBF_network_multiple_params(params:np.ndarray, inputs:np.ndarray) -> np.ndarray:
+    weights = params[:, :NODE_CNT]  # shape: (POP_SIZE, 7)
+    means = params[:, NODE_CNT: NODE_CNT + NODE_CNT * INPUT_DIMENSION].reshape(-1, NODE_CNT, INPUT_DIMENSION)  # shape: (POP_SIZE, 7, 3)
+    stds = params[:, -1 - NODE_CNT: -1]  # shape: (POP_SIZE, 7)
+    bias = params[:, -1]  # scaler      shape: (POP_SIZE,)
+
+    inputs = inputs[:, None, None]  # shape: (Batch, 1, 1, 3)
+
+    return (np.sum(np.exp(-dist(inputs - means) / (2 * (stds ** 2))) * weights, axis = -1) + bias)
+
+def RBF_network_single_params(params:np.ndarray, inputs:np.ndarray) -> np.ndarray:
+    weights = params[:NODE_CNT][None].T  # shape: (7, 1)
+    means = params[NODE_CNT: NODE_CNT + NODE_CNT * INPUT_DIMENSION].reshape(NODE_CNT, INPUT_DIMENSION)  # shape: (7, 3)
+    stds = params[-1 - NODE_CNT: -1]  # shape: (7,)
+    bias = params[-1]  # scaler  (POP_SIZE,)
+
+    inputs = inputs[:, None]  # shape: (Batch, 1, 1, 3)
+
+    return (np.exp(-dist(inputs - means) / (2 * (stds ** 2))) @ weights + bias).T[0]
 
 class GeneticAlgorithmRealNum:
-    def __init__(self, pop_size, input_dimension, node_cnt, cross_rate, mutation_rate, max_gen):
+    def __init__(self, pop_size:int, input_dimension:int, node_cnt:int, cross_rate:float, mutation_rate:float, max_gen:int):
         self.this_file_path = os.path.dirname(os.path.abspath(__file__))
         self.pop_size = pop_size               # 總染色體數
-        self.gene_size = node_cnt + input_dimension*node_cnt + node_cnt + 1             # 染色體長度
+        self.gene_size = node_cnt + input_dimension*node_cnt + node_cnt + 1            # 染色體長度
         self.input_dimension = input_dimension
         self.node_cnt = node_cnt
         self.gene_limit = (                                                            # 設定上下限
@@ -49,13 +62,23 @@ class GeneticAlgorithmRealNum:
         self.cross_rate = cross_rate           # 交配率
         self.mutation_rate = mutation_rate     # 突變率
         self.max_gen = max_gen                 # 最大迭代次數
-        self.pop = []                          # 染色體群體
-        self.fitness_value = []                # 個體分數
-        self.mating_pool = []                  # 交配池
 
-    def initialization(self):
-        """產生初始population，不同index有不同的上下限
-        """
+    def load_data(self) -> tuple[np.ndarray]:
+        training_data_path = 'HW3_training_data'
+        file_list = [_ for _ in os.listdir(training_data_path) if _.endswith(r'.txt') and _[:6] == "train_"] # 取出符合條件的檔案
+
+        X, Y =[], []
+        for file in file_list:
+            with open(f'{training_data_path}/{file}', 'r') as f:
+                content = [list(map(float, line[:-1].split(' '))) for line in f if '30.0000001' not in line]
+
+            X += [list(map(float, data[:3])) for data in content]
+            Y += [theta_scale(float(data[-1])) for data in content]
+
+        return np.array(X), np.array(Y)
+
+    def initialization(self) -> np.ndarray:
+        population = []
         for _ in range(self.pop_size):
             temp_pop = []
             for j in range(self.gene_size):
@@ -63,152 +86,111 @@ class GeneticAlgorithmRealNum:
                     if j >= start_index and j <= end_index:
                         temp_pop.append(random.uniform(lower, upper))
                         break
-            self.pop.append(temp_pop)
-    
-    def calc_fitness_value(self, group:str):
-        csv_file_path = os.path.join(self.this_file_path, 'train_data.csv')
-        with open(csv_file_path, 'r', encoding='utf-8', newline='') as CsvReader:
-            CsvReader = csv.reader(CsvReader)
-            train_data_list = list(CsvReader)
-        total_train_data_cnt = len(train_data_list)
-
-        if group == 'pop':
-            population = self.pop
-        elif group == 'mating_pool':
-            population = self.mating_pool
-
+            population.append(temp_pop)
         
-        self.fitness_value = []
-        for pop in population:
-            error = 0
-            for data in train_data_list:
-                x= list(map(float, data[:3]))
-                theta = float(data[-1])
-                error += abs(theta - RBFNetwork(self.node_cnt, self.input_dimension, pop, x))
-            fitness_value = 1 / (error / total_train_data_cnt)
-            self.fitness_value.append(fitness_value)
+        return np.array(population)   # shape: (POP_SIZE, self.gene_size)
+    
+    def calc_fitness_value(self, group:np.ndarray) -> np.ndarray:
+        data_X, data_Y = self.load_data()
 
-    def selection_by_RWS(self):
-        """用輪盤法抽選至交配池內
-        """
-        self.mating_pool.clear()
-        if sum(self.fitness_value) == 0:
-            self.mating_pool = self.pop.copy()
-            return
-        else:
-            probability = [individual_value / sum(self.fitness_value) for individual_value in self.fitness_value]
+        population = np.array(group)
+        error = np.sum(abs(RBF_network_multiple_params(population, data_X).T - data_Y) ** 3, axis = -1) / len(data_Y)  # [pop size, data batch] - [data batch]
 
-        for _ in range(self.pop_size):
-            random_pop = random.choices(self.pop, weights=probability)[0]
-            random_pop = list(random_pop)
-            self.mating_pool.append(random_pop)
+        return error                  # shape: (POP_SIZE, )
 
-    def crossover(self):
-        """交配池內的染色體進行交配
-        """
-        shuffle_mating_pool = np.random.permutation(self.mating_pool) # 打亂mating_pool順序
+    def selection_by_RWS(self, pop:np.ndarray, fitness_values:np.ndarray) -> np.ndarray:
+        if sum(fitness_values) == 0:
+            mating_pool = deepcopy(pop)
+            return mating_pool
 
-        for i in range(0, len(shuffle_mating_pool), 2):
-            cr = random.uniform(0,1)
-            if cr < self.cross_rate:
-                alpha = random.uniform(0,1)
-                spring_1 = alpha * shuffle_mating_pool[i] + (1-alpha)*shuffle_mating_pool[i+1]
-                spring_2 = (1-alpha)*shuffle_mating_pool[i] + alpha * shuffle_mating_pool[i+1]
-                shuffle_mating_pool[i] = spring_1
-                shuffle_mating_pool[i+1] = spring_2
-                
-        shuffle_mating_pool = [list(x) for x in shuffle_mating_pool]  # numpy.ndarray轉為list
-        self.mating_pool = shuffle_mating_pool
+        probabilities = (1 / fitness_values) / sum(1 / fitness_values)
 
-    def mutation(self):
-        """交配池內的染色體進行突變
-        """
-        for pop in self.mating_pool:
+        mating_pool = np.random.Generator(np.random.PCG64()).choice(pop, size = self.pop_size, p = probabilities)
+        return mating_pool
+
+    def crossover(self, mating_pool:np.ndarray) -> np.ndarray:
+        np.random.shuffle(mating_pool)  # 打亂mating_pool順序
+
+        index = np.arange(len(mating_pool) / 2, dtype = np.int32) * 2  # 0, 2, 4, ......
+        cr = np.random.uniform(size = len(index))
+        alpha = np.where(cr < self.cross_rate, np.random.uniform(size = len(index)), 1)[None].T
+
+        # Crossover gene information
+        spring1 = mating_pool[index] * alpha + mating_pool[index + 1] * (1 - alpha)
+        spring2 = mating_pool[index] * (1 - alpha) + mating_pool[index + 1] * alpha
+
+        # Assign new gene
+        mating_pool[index] = spring1
+        mating_pool[index + 1] = spring2
+
+        return mating_pool
+
+    def mutation(self, mating_pool:np.ndarray) -> np.ndarray:
+        for pop in mating_pool:
             for index in range(self.gene_size):
-                mr = random.uniform(0,1)
+                mr = np.random.uniform(0,1)
                 if mr < self.mutation_rate:
                     for start, end, lower, upper in self.gene_limit:
                         if index >= start and index <= end:
-                            pop[index] = random.uniform(lower,upper)
+                            pop[index] = np.random.uniform(lower,upper)
                             break
 
-    def execute(self) -> list:
-        self.initialization()
-        self.calc_fitness_value('pop')
-        gen_best_model = {}
-        for gen in tqdm(range(1, self.max_gen+1),ncols=50):
-            temp_dict = {}
-            self.selection_by_RWS()
-            self.crossover()
-            self.mutation()
-            self.calc_fitness_value('mating_pool')
-            self.pop = self.mating_pool.copy()  # replace
+        return mating_pool
 
-            best_model_index = self.fitness_value.index(min(self.fitness_value))
-            best_model = self.pop[best_model_index]
-            best_fitness_value = min(self.fitness_value)
+    def execute(self) -> np.ndarray:
+        pop = self.initialization()
+        fitness_values = self.calc_fitness_value(pop)
+        gen_best_model = {}
+        for gen in tqdm(range(1, self.max_gen+1), ncols=100, desc='Training'):
+            temp_dict = {}
+            mating_pool = self.selection_by_RWS(pop, fitness_values)
+            mating_pool = self.crossover(mating_pool)
+            mating_pool = self.mutation(mating_pool)
+            fitness_value = self.calc_fitness_value(mating_pool)
+            pop = deepcopy(mating_pool)    # replace
+
+            best_model_index = fitness_value.argmin()
+            best_model = pop[best_model_index]
+            best_fitness_value = np.min(fitness_value)
 
             temp_dict['model'] = best_model
             temp_dict['fitness'] = best_fitness_value
             gen_best_model[gen] = temp_dict
 
-        # 取出最佳結果回傳
+        # get best result
         min_fitness_model = min(gen_best_model.values(), key=lambda x: x['fitness'])['model']
 
         return min_fitness_model
 
 class Car:
-    def __init__(self, radius, length):
+    def __init__(self, radius:int, length:int):
         self.radius = radius
         self.length = length
         self.position_x = 0
         self.position_y = 0
-        self.orientation = 90 # 90 ~ -270
+        self.orientation = 90 # range: 90 ~ -270 (degrees)
 
-    def calc_next_step(self, theta):
-        next_x = self.position_x + math.cos(math.radians(self.orientation + theta)) + math.sin(math.radians(theta))*math.sin(math.radians(self.orientation))
-        next_y = self.position_y + math.sin(math.radians(self.orientation + theta)) - math.sin(math.radians(theta))*math.cos(math.radians(self.orientation))
+    def calc_next_step(self, theta:np.ndarray):
+        next_x = self.position_x + np.cos(np.radians(self.orientation + theta)) + np.sin(np.radians(theta))*np.sin(np.radians(self.orientation))
+        next_y = self.position_y + np.sin(np.radians(self.orientation + theta)) - np.sin(np.radians(theta))*np.cos(np.radians(self.orientation))
         self.position_x, self.position_y = next_x, next_y
 
-        self.orientation -= self.orientation - math.degrees(math.asin(2*math.sin(math.radians(theta))/self.length))
-        if self.orientation < -270:
+        self.orientation = self.orientation + np.degrees(np.arcsin(2*np.sin(np.radians(theta))/self.length))
+        if self.orientation < -270:  # if out of range
             self.orientation += 360
         if self.orientation > 90:
             self.orientation -= 360
 
 
-def RBFNetwork(node_cnt:int, input_dimension:int, chromosome:list[float], x:list[float]) -> float:
-    Theta = 0
-    for i in range(node_cnt):
-        m_start_index = node_cnt+i*input_dimension
-        m_end_index = m_start_index + input_dimension
-        sigma_start_index = node_cnt + input_dimension*node_cnt
-
-        W_i = chromosome[i]
-        m_vector = np.array(chromosome[m_start_index:m_end_index])
-
-        sigma = chromosome[sigma_start_index+i]
-        phi_i_of_x = np.exp(-(np.linalg.norm(np.array(x) - m_vector)) / (2*sigma**2))
-        Theta += W_i * phi_i_of_x
-    
-    Theta += chromosome[-1]
-
-    # result = (40 - (-40)) * (float(Theta) - 0) / (1 - 0) + (-40) # 0~1 -> -40~40
-    # return result
-    return float(Theta)
-
-def save_model(data:list[float], path:str='best_model.csv'):
+def save_model(data:np.ndarray, path:str='best_model.csv'):
     with open(path,'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(data)
 
-def load_model(path:str='best_model.csv') -> list[float]:
+def load_model(path:str='best_model.csv'):
     try:
-        with open(path, 'r', newline='') as file:
-            reader = csv.reader(file)
-            model = next(reader)
-            model = [float(item) for item in model]
-            return model
+        model = np.genfromtxt(path, delimiter=',')
+        return model
     except FileNotFoundError:
         print(f"[Errno 2] No such file or directory: '{path}'")
 
@@ -217,21 +199,21 @@ def calc_distance_from_2_point(point1:tuple, point2:tuple) -> float:
     # 給兩點，求距離
     x1, y1 = point1[0], point1[1]
     x2, y2 = point2[0], point2[1]
-    distance = math.hypot(x2-x1,y2-y1)
+    distance = np.hypot(x2-x1,y2-y1)
 
     return distance
 
 def calc_line_with_point_and_angle(point:tuple, angle:float) -> tuple[float]:
     # 給點和角度，求線
     x,y = point
-    theta = math.radians(angle)
+    theta = np.radians(angle)
     
     if angle % 180 == 90: # 垂直
         A = 1
         B = 0
         C = -x
     else:
-        m = math.tan(theta)
+        m = np.tan(theta)
         b = y - m * x
         A = -m
         B = 1
@@ -274,13 +256,13 @@ def find_intersection(line1:tuple[float], line2:tuple[float]) -> None|tuple[floa
     
 def direction_unit_vector(angle:float) -> tuple[float]:
     # 給角度，求單位向量
-    theta = math.radians(angle)
-    unit_vector_x = math.cos(theta)
-    unit_vector_y = math.sin(theta)
+    theta = np.radians(angle)
+    unit_vector_x = np.cos(theta)
+    unit_vector_y = np.sin(theta)
 
     return unit_vector_x, unit_vector_y
 
-def calc_dF_dL_dR(walls:list[tuple], car:Car):
+def calc_dF_dL_dR(walls:list[tuple], car:Car) -> tuple[np.float64]:
     # 計算dF、dL、dR的距離
     front = car.orientation
     left = car.orientation + 90
@@ -302,20 +284,18 @@ def calc_dF_dL_dR(walls:list[tuple], car:Car):
             wall_line = calc_line_with_2point(wall[0], wall[1])
             
             intersection.append(find_intersection(car_line, wall_line))
-        print('intersection: ',intersection)
+
         # 濾除範圍外的交點
         cnt = 0
         filtered_intersection = []
         for point in intersection:
             if point is not None:
-                point = (round(point[0],2), round(point[1],2))  # TEST
-                if point[0] >= walls[cnt][0][0] and point[0] <= walls[cnt][1][0] and \
-                point[1] >= walls[cnt][0][1] and point[1] <= walls[cnt][1][1]: # 確認交點是否在線段範圍內
+                # point = (round(point[0],2), round(point[1],2))  # TODO: TEST
+                if point[0] >= walls[cnt][0][0]-1e-5 and point[0] <= walls[cnt][1][0]+1e-5 and \
+                point[1] >= walls[cnt][0][1]-1e-5 and point[1] <= walls[cnt][1][1]+1e-5: # 確認交點是否在線段範圍內
                     
                     filtered_intersection.append(point)
             cnt += 1
-        
-        print('filtered_intersection: ', filtered_intersection)
 
         # 保留向量內積大於0的交點
         car_direction_vector = direction_unit_vector(d)
@@ -335,85 +315,92 @@ def calc_dF_dL_dR(walls:list[tuple], car:Car):
         for point in result_point:
             result = calc_distance_from_2_point(point, (car.position_x,car.position_y))
             temp_distance.append(result)
-        if temp_distance:
-            result_distance.append(min(temp_distance))
+        if len(temp_distance) > 0:
+            result_distance.append(min(30,min(temp_distance)))
         else:
             result_distance.append(float('inf'))
 
-    print('result_distance', result_distance)
-    return result_distance
+    dF = result_distance[0]
+    dL = result_distance[1]
+    dR = result_distance[2]
+
+    return dF, dL, dR
 
 
 if __name__ =='__main__':
 
-    INPUT_DIMENSION = 3
-    NODE_CNT = 7
-
-    CAR_RADIUS = 3
-    CAR_LENGTH = 1
-
-    POP_SIZE = 100
-    CROSS_RATE = 0.8
-    MUTATION_RATE = 0.2
-    MAX_GEN = 100
-
-    walls = [((-6, 0), (-6, 22)),
+    walls = [((-6, -10), (-6, 22)),
                 ((-6, 22), (18, 22)),
-                ((18, 22), (18, 37)),
-                ((18, 50), (30, 50)),  # 終點邊界  原始為37 -> 50
-                ((30, 10), (30, 37)),
+                ((18, 22), (18, 50)),
+                ((18, 50), (30, 50)),   # 終點邊界  原始為37 -> 50
+                ((30, 10), (30, 50)),
                 ((6, 10), (30, 10)),
-                ((6, 0), (6, 10)),
+                ((6, -10), (6, 10)),
                 ((-6, -10), (6, -10))]  # 起點邊界  原始為0 -> -10
+    
+    # walls = [((-9, -10), (-9, 25)),     # 拓寬版本
+    #             ((-9, 25), (15, 25)),
+    #             ((15, 25), (15, 60)),
+    #             ((15, 60), (33, 60)),
+    #             ((33, 7), (33, 60)),
+    #             ((9, 7), (33, 7)),
+    #             ((9, -10), (9, 7)),
+    #             ((-9, -10), (9, -10))]  
     
     goal_position = (24, 37)
 
     # 若已有模型，此段可不跑
+    if TRAIN == True:
     # ===========training data 建立模型===========start
-    TrainingDataPreProcessing().execute()
+        best_model = GeneticAlgorithmRealNum(pop_size=POP_SIZE,
+                                    input_dimension=INPUT_DIMENSION,
+                                    node_cnt=NODE_CNT,
+                                    cross_rate=CROSS_RATE,
+                                    mutation_rate=MUTATION_RATE,
+                                    max_gen=MAX_GEN).execute()
 
-    best_model = GeneticAlgorithmRealNum(pop_size=POP_SIZE,
-                                 input_dimension=INPUT_DIMENSION,
-                                 node_cnt=NODE_CNT,
-                                 cross_rate=CROSS_RATE,
-                                 mutation_rate=MUTATION_RATE,
-                                 max_gen=MAX_GEN).execute()
-
-    save_model(best_model, 'best_model.csv')
+        save_model(best_model, 'best_model.csv')
     # ===========training data 建立模型===========end
+    if TEST == True:
+        best_model = load_model('best_model.csv')
 
-    best_model = load_model('best_model.csv')
-
-    car = Car(radius=CAR_RADIUS,
-              length=CAR_LENGTH)
-    
-    fig, ax = plt.subplots()
-    plt.ion()
-    for wall in walls: # 畫出地圖邊界
-        ax.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], color='black')
-    
-    plt.xlim(-10, 40)
-    plt.ylim(-5, 40)
-    plt.xlabel('X Location')
-    plt.ylabel('Y Location')
-    plt.grid(True)  # 顯示格線
-
-    it = 0 # iteration
-    while (int(car.position_x), int(car.position_y)) != goal_position or it < 100 or min(result_distance) <= car.radius:
+        car = Car(radius=CAR_RADIUS,
+                length=CAR_LENGTH)
+        
+        fig, ax = plt.subplots()
+        plt.ion()
+        for wall in walls: # 畫出地圖邊界
+            ax.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], color='black')
+        
+        plt.xlim(-10, 40)
+        plt.ylim(-5, 40)
+        plt.xlabel('X Location')
+        plt.ylabel('Y Location')
+        plt.grid(True)  # 顯示格線
         plt.plot(car.position_x, car.position_y, marker='s', color='r', fillstyle='none')
-        plt.pause(3) # 畫面更新間隔
-        result_distance = calc_dF_dL_dR(walls, car)
 
-        Theta = RBFNetwork(node_cnt=NODE_CNT,
-                input_dimension=INPUT_DIMENSION,
-                chromosome=best_model, 
-                x = result_distance)
+        it = 0 # iteration
+        result_distance = [100, 100, 100] # initial distance for while iterating
+        while (int(car.position_x), int(car.position_y)) != goal_position and (it < 300):
+            dF, dL, dR = calc_dF_dL_dR(walls, car)
 
-        car.calc_next_step(theta=Theta)
-        # TODO: 碰撞半徑問題 car.radius
-        # TODO: 角度是以車子為基準還是xy座標為基準
-        # TODO: theta rescaling
-        # TODO: 方向盤角度y軸為0，逆時針為+，順時針為-
-        it += 1
+            if dF == float('inf') or dL == float('inf') or dR == float('inf'):
+                print('out of range!')
+                plt.savefig('out_of_range.png')
+                break
 
-    plt.show()
+            theta = RBF_network_single_params(best_model, np.array([[dF, dL, dR]]))
+            theta = np.where(theta < 0., 0, theta)
+            theta = np.where(theta > 1., 1, theta)
+            theta = output_scale(theta)[0]
+
+            print(f'Iter: {it}, Position: ({car.position_x:.02f}, {car.position_y:.02f}), Orientation: {car.orientation:.02f}°, theta: {theta:.2f}°, FLR: {dF:.01f}, {dL:.01f}, {dR:.01f}')
+            plt.plot(car.position_x, car.position_y, marker='s', color='r', fillstyle='none')
+            plt.pause(0.05) # 畫面更新間隔
+            
+            car.calc_next_step(theta=theta)
+            it += 1
+            if (int(car.position_x), int(car.position_y)) == goal_position:
+                plt.savefig('success.png')
+
+        plt.show()
