@@ -17,8 +17,8 @@ CROSS_RATE = 0.6
 MUTATION_RATE = 0.05
 MAX_GEN = 100
 
-TRAIN = False
-TEST = True
+TRAIN = True
+TEST = False
 
 DELAY_TIME = 0.05
 
@@ -118,12 +118,12 @@ class GeneticAlgorithmRealNum:
         alpha = np.where(cr < self.cross_rate, np.random.uniform(size = len(index)), 1)[None].T
 
         # Crossover gene information
-        spring1 = mating_pool[index] * alpha + mating_pool[index + 1] * (1 - alpha)
-        spring2 = mating_pool[index] * (1 - alpha) + mating_pool[index + 1] * alpha
+        offspring1 = mating_pool[index] * alpha + mating_pool[index + 1] * (1 - alpha)
+        offspring2 = mating_pool[index] * (1 - alpha) + mating_pool[index + 1] * alpha
 
         # Assign new gene
-        mating_pool[index] = spring1
-        mating_pool[index + 1] = spring2
+        mating_pool[index] = offspring1
+        mating_pool[index + 1] = offspring2
 
         return mating_pool
 
@@ -444,6 +444,6 @@ if __name__ =='__main__':
                 save_model(pops[i], f'models/best_model_{i}.csv')
 
     if TEST == True:
-        best_model = load_model('models/best_model_49.csv')                  # 選擇要重播的模型
+        best_model = load_model('models/best_model_105.csv')                  # 選擇要重播的模型
         car = Car(radius=CAR_RADIUS, length=CAR_LENGTH)
         success = car.test_run(best_model, walls, goal_position, DELAY_TIME) # 觀察該模型的車輛移動狀況
