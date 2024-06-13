@@ -10,50 +10,51 @@ INPUT_DIMENSION = 3
 NODE_CNT = 7
 
 CAR_RADIUS = 3
-CAR_LENGTH = 2    # 5.8
+CAR_LENGTH = 3
 
-POP_SIZE = 100
+POP_SIZE = 200
 CROSS_RATE = 0.6
-MUTATION_RATE = 0.2
+MUTATION_RATE = 0.05
 MAX_GEN = 100
 
-TRAIN = True
+TRAIN = False
 TEST = True
 
+DELAY_TIME = 0.05
+
 # lambda function
-dist = lambda x: np.sum(x ** 2, axis = -1)                            # Mahalanobis distance
 theta_scale = lambda theta: (theta + 40) / 80.0                       # [-40, 40] -> [0, 1] for read training data
 output_scale = lambda output: ((output * 80.0) - 40)                  # [0, 1] -> [-40, 40] 
 
 
 def RBF_network_multiple_params(params:np.ndarray, inputs:np.ndarray) -> np.ndarray:
-    weights = params[:, :NODE_CNT]  # shape: (POP_SIZE, 7)
-    means = params[:, NODE_CNT: NODE_CNT + NODE_CNT * INPUT_DIMENSION].reshape(-1, NODE_CNT, INPUT_DIMENSION)  # shape: (POP_SIZE, 7, 3)
+    weights = params[:, :NODE_CNT]       # shape: (POP_SIZE, 7)
+    means = params[:, NODE_CNT: NODE_CNT + NODE_CNT * INPUT_DIMENSION].reshape(-1, NODE_CNT, INPUT_DIMENSION)  # shape: (POP_SIZE, 21) -> (POP_SIZE, 7, 3)
     stds = params[:, -1 - NODE_CNT: -1]  # shape: (POP_SIZE, 7)
-    bias = params[:, -1]  # scaler      shape: (POP_SIZE,)
+    bias = params[:, -1]     # scalar      shape: (POP_SIZE,)
 
-    inputs = inputs[:, None, None]  # shape: (Batch, 1, 1, 3)
+    inputs = inputs[:, None, None]       # shape: (Batch, 3) -> (Batch, 1, 1, 3)
 
-    return (np.sum(np.exp(-dist(inputs - means) / (2 * (stds ** 2))) * weights, axis = -1) + bias)
+    return (np.sum(np.exp(-np.sum((inputs - means)**2, axis=-1) / (2 * (stds ** 2))) * weights, axis = -1) + bias)
 
 def RBF_network_single_params(params:np.ndarray, inputs:np.ndarray) -> np.ndarray:
     weights = params[:NODE_CNT][None].T  # shape: (7, 1)
     means = params[NODE_CNT: NODE_CNT + NODE_CNT * INPUT_DIMENSION].reshape(NODE_CNT, INPUT_DIMENSION)  # shape: (7, 3)
-    stds = params[-1 - NODE_CNT: -1]  # shape: (7,)
-    bias = params[-1]  # scaler  (POP_SIZE,)
+    stds = params[-1 - NODE_CNT: -1]     # shape: (7,)
+    bias = params[-1]       # scalar       shape: (POP_SIZE,)
 
-    inputs = inputs[:, None]  # shape: (Batch, 1, 1, 3)
+    inputs = inputs[:, None]             # shape: (Batch, 1, 3)
 
-    return (np.exp(-dist(inputs - means) / (2 * (stds ** 2))) @ weights + bias).T[0]
+    return (np.exp(-np.sum((inputs - means)**2, axis=-1) / (2 * (stds ** 2))) @ weights + bias).T[0]
 
 class GeneticAlgorithmRealNum:
     def __init__(self, pop_size:int, input_dimension:int, node_cnt:int, cross_rate:float, mutation_rate:float, max_gen:int):
         self.this_file_path = os.path.dirname(os.path.abspath(__file__))
-        self.pop_size = pop_size               # 總染色體數
-        self.gene_size = node_cnt + input_dimension*node_cnt + node_cnt + 1            # 染色體長度
+        self.pop_size = pop_size                                               # 總染色體數
+        self.gene_size = node_cnt + input_dimension*node_cnt + node_cnt + 1    # 染色體長度
         self.input_dimension = input_dimension
         self.node_cnt = node_cnt
-        self.gene_limit = (                                                            # 設定上下限
+        self.gene_limit = (                                                    # 設定上下限
         (0, node_cnt-1, 0, 1),
         (node_cnt, node_cnt*(input_dimension+1)-1, 0, 30),
         (node_cnt*(input_dimension+1), node_cnt*(input_dimension+2)-1, 0, 10),
@@ -70,7 +71,7 @@ class GeneticAlgorithmRealNum:
         X, Y =[], []
         for file in file_list:
             with open(f'{training_data_path}/{file}', 'r') as f:
-                content = [list(map(float, line[:-1].split(' '))) for line in f if '30.0000001' not in line]
+                content = [list(map(float, line[:-1].split(' '))) for line in f if '30.0000000' not in line]
 
             X += [list(map(float, data[:3])) for data in content]
             Y += [theta_scale(float(data[-1])) for data in content]
@@ -94,7 +95,7 @@ class GeneticAlgorithmRealNum:
         data_X, data_Y = self.load_data()
 
         population = np.array(group)
-        error = np.sum(abs(RBF_network_multiple_params(population, data_X).T - data_Y) ** 3, axis = -1) / len(data_Y)  # [pop size, data batch] - [data batch]
+        error = np.sum(abs(RBF_network_multiple_params(population, data_X).T - data_Y) ** 2, axis = -1) / len(data_Y)  # [pop_size, data_batch] - [data_batch]
 
         return error                  # shape: (POP_SIZE, )
 
@@ -105,6 +106,7 @@ class GeneticAlgorithmRealNum:
 
         probabilities = (1 / fitness_values) / sum(1 / fitness_values)
 
+        # https://stackoverflow.com/questions/60629890/why-random-choices-is-faster-than-numpy-s-random-choice
         mating_pool = np.random.Generator(np.random.PCG64()).choice(pop, size = self.pop_size, p = probabilities)
         return mating_pool
 
@@ -137,7 +139,7 @@ class GeneticAlgorithmRealNum:
 
         return mating_pool
 
-    def execute(self) -> np.ndarray:
+    def execute(self) -> tuple[np.ndarray]:
         pop = self.initialization()
         fitness_values = self.calc_fitness_value(pop)
         gen_best_model = {}
@@ -160,7 +162,8 @@ class GeneticAlgorithmRealNum:
         # get best result
         min_fitness_model = min(gen_best_model.values(), key=lambda x: x['fitness'])['model']
 
-        return min_fitness_model
+        # return min_fitness_model
+        return min_fitness_model, pop
 
 class Car:
     def __init__(self, radius:int, length:int):
@@ -175,14 +178,97 @@ class Car:
         next_y = self.position_y + np.sin(np.radians(self.orientation + theta)) - np.sin(np.radians(theta))*np.cos(np.radians(self.orientation))
         self.position_x, self.position_y = next_x, next_y
 
-        self.orientation = self.orientation + np.degrees(np.arcsin(2*np.sin(np.radians(theta))/self.length))
+        self.orientation = self.orientation - np.degrees(np.arcsin(2*np.sin(np.radians(theta))/self.length))
         if self.orientation < -270:  # if out of range
             self.orientation += 360
         if self.orientation > 90:
             self.orientation -= 360
 
+    def train_run(self, best_model, walls, goal_position, delay_time=1, file_index=0) -> bool:
+        fig, ax = plt.subplots()
+        for wall in walls: # 畫出地圖邊界
+            ax.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], color='black')
+        
+        plt.xlim(-10, 40)
+        plt.ylim(-5, 40)
+        plt.xlabel('X Location')
+        plt.ylabel('Y Location')
+        plt.grid(True)  # 顯示格線
+        plt.plot(self.position_x, self.position_y, marker='s', color='r', fillstyle='none')
+
+        it = 0 # iteration
+        while True:
+            dF, dL, dR = calc_dF_dL_dR(walls, car)
+
+            if dF == float('inf') or dL == float('inf') or dR == float('inf'):
+                print('out of range!')
+                plt.savefig('out_of_range.png')
+                success = False
+                break
+
+            theta = RBF_network_single_params(best_model, np.array([[dF, dL, dR]]))
+            theta = np.where(theta < 0., 0, theta)
+            theta = np.where(theta > 1., 1, theta)
+            theta = output_scale(theta)[0]
+            print(f'Iter: {it}, Position: ({self.position_x:.02f}, {self.position_y:.02f}), Orientation: {self.orientation:.02f}°, theta: {theta:.2f}°, FLR: {dF:.01f}, {dL:.01f}, {dR:.01f}')
+            plt.plot(self.position_x, self.position_y, marker='s', color='r', fillstyle='none')
+            
+            self.calc_next_step(theta=theta)
+            it += 1
+            if int(self.position_y) > goal_position[1]:
+                plt.savefig(f'success_{file_index}_{CAR_LENGTH}_{CROSS_RATE}_{MUTATION_RATE}.png')
+                success = True
+                break
+            if it > 300:
+                success = False
+                break
+
+        return success
+
+    def test_run(self, best_model, walls, goal_position, delay_time=1, file_index=0) -> bool:
+        fig, ax = plt.subplots()
+        plt.ion()
+        for wall in walls: # 畫出地圖邊界
+            ax.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], color='black')
+        
+        plt.xlim(-10, 40)
+        plt.ylim(-5, 40)
+        plt.xlabel('X Location')
+        plt.ylabel('Y Location')
+        plt.grid(True)  # 顯示格線
+        plt.plot(self.position_x, self.position_y, marker='s', color='r', fillstyle='none')
+
+        it = 0 # iteration
+        while True:
+            dF, dL, dR = calc_dF_dL_dR(walls, car)
+
+            if dF == float('inf') or dL == float('inf') or dR == float('inf'):
+                print('out of range!')
+                break
+
+            theta = RBF_network_single_params(best_model, np.array([[dF, dL, dR]]))
+            theta = np.where(theta < 0., 0, theta)
+            theta = np.where(theta > 1., 1, theta)
+            theta = output_scale(theta)[0]
+            print(f'Iter: {it}, Position: ({self.position_x:.02f}, {self.position_y:.02f}), Orientation: {self.orientation:.02f}°, theta: {theta:.2f}°, FLR: {dF:.01f}, {dL:.01f}, {dR:.01f}')
+            plt.plot(self.position_x, self.position_y, marker='s', color='r', fillstyle='none')
+            plt.pause(delay_time) # 畫面更新間隔
+            
+            self.calc_next_step(theta=theta)
+            it += 1
+            if int(self.position_y) > goal_position[1]:
+                success  = True
+                break
+            if it > 300:
+                success  = False
+                break
+
+        plt.show()
+        return success
+
 
 def save_model(data:np.ndarray, path:str='best_model.csv'):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path,'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(data)
@@ -290,7 +376,6 @@ def calc_dF_dL_dR(walls:list[tuple], car:Car) -> tuple[np.float64]:
         filtered_intersection = []
         for point in intersection:
             if point is not None:
-                # point = (round(point[0],2), round(point[1],2))  # TODO: TEST
                 if point[0] >= walls[cnt][0][0]-1e-5 and point[0] <= walls[cnt][1][0]+1e-5 and \
                 point[1] >= walls[cnt][0][1]-1e-5 and point[1] <= walls[cnt][1][1]+1e-5: # 確認交點是否在線段範圍內
                     
@@ -320,6 +405,8 @@ def calc_dF_dL_dR(walls:list[tuple], car:Car) -> tuple[np.float64]:
         else:
             result_distance.append(float('inf'))
 
+    SCALAR = np.sqrt(2)
+    result_distance = [i*SCALAR for i in result_distance]
     dF = result_distance[0]
     dL = result_distance[1]
     dR = result_distance[2]
@@ -332,75 +419,31 @@ if __name__ =='__main__':
     walls = [((-6, -10), (-6, 22)),
                 ((-6, 22), (18, 22)),
                 ((18, 22), (18, 50)),
-                ((18, 50), (30, 50)),   # 終點邊界  原始為37 -> 50
+                ((18, 50), (30, 50)),   
                 ((30, 10), (30, 50)),
                 ((6, 10), (30, 10)),
                 ((6, -10), (6, 10)),
-                ((-6, -10), (6, -10))]  # 起點邊界  原始為0 -> -10
-    
-    # walls = [((-9, -10), (-9, 25)),     # 拓寬版本
-    #             ((-9, 25), (15, 25)),
-    #             ((15, 25), (15, 60)),
-    #             ((15, 60), (33, 60)),
-    #             ((33, 7), (33, 60)),
-    #             ((9, 7), (33, 7)),
-    #             ((9, -10), (9, 7)),
-    #             ((-9, -10), (9, -10))]  
-    
+                ((-6, -10), (6, -10))]
+
     goal_position = (24, 37)
 
-    # 若已有模型，此段可不跑
     if TRAIN == True:
-    # ===========training data 建立模型===========start
-        best_model = GeneticAlgorithmRealNum(pop_size=POP_SIZE,
+        best_model, pops = GeneticAlgorithmRealNum(pop_size=POP_SIZE,
                                     input_dimension=INPUT_DIMENSION,
                                     node_cnt=NODE_CNT,
                                     cross_rate=CROSS_RATE,
                                     mutation_rate=MUTATION_RATE,
                                     max_gen=MAX_GEN).execute()
 
-        save_model(best_model, 'best_model.csv')
-    # ===========training data 建立模型===========end
+        save_model(best_model, './best_model.csv')     # 僅存最佳模型
+
+        for i in range(len(pops)):                     # 將最終版本的population拿出來跑，成功才儲存
+            car = Car(radius=CAR_RADIUS, length=CAR_LENGTH)
+            success = car.train_run(pops[i], walls, goal_position, DELAY_TIME, file_index=i)
+            if success:
+                save_model(pops[i], f'models/best_model_{i}.csv')
+
     if TEST == True:
-        best_model = load_model('best_model.csv')
-
-        car = Car(radius=CAR_RADIUS,
-                length=CAR_LENGTH)
-        
-        fig, ax = plt.subplots()
-        plt.ion()
-        for wall in walls: # 畫出地圖邊界
-            ax.plot([wall[0][0], wall[1][0]], [wall[0][1], wall[1][1]], color='black')
-        
-        plt.xlim(-10, 40)
-        plt.ylim(-5, 40)
-        plt.xlabel('X Location')
-        plt.ylabel('Y Location')
-        plt.grid(True)  # 顯示格線
-        plt.plot(car.position_x, car.position_y, marker='s', color='r', fillstyle='none')
-
-        it = 0 # iteration
-        result_distance = [100, 100, 100] # initial distance for while iterating
-        while (int(car.position_x), int(car.position_y)) != goal_position and (it < 300):
-            dF, dL, dR = calc_dF_dL_dR(walls, car)
-
-            if dF == float('inf') or dL == float('inf') or dR == float('inf'):
-                print('out of range!')
-                plt.savefig('out_of_range.png')
-                break
-
-            theta = RBF_network_single_params(best_model, np.array([[dF, dL, dR]]))
-            theta = np.where(theta < 0., 0, theta)
-            theta = np.where(theta > 1., 1, theta)
-            theta = output_scale(theta)[0]
-
-            print(f'Iter: {it}, Position: ({car.position_x:.02f}, {car.position_y:.02f}), Orientation: {car.orientation:.02f}°, theta: {theta:.2f}°, FLR: {dF:.01f}, {dL:.01f}, {dR:.01f}')
-            plt.plot(car.position_x, car.position_y, marker='s', color='r', fillstyle='none')
-            plt.pause(0.05) # 畫面更新間隔
-            
-            car.calc_next_step(theta=theta)
-            it += 1
-            if (int(car.position_x), int(car.position_y)) == goal_position:
-                plt.savefig('success.png')
-
-        plt.show()
+        best_model = load_model('models/best_model_49.csv')                  # 選擇要重播的模型
+        car = Car(radius=CAR_RADIUS, length=CAR_LENGTH)
+        success = car.test_run(best_model, walls, goal_position, DELAY_TIME) # 觀察該模型的車輛移動狀況
